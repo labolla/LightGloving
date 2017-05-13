@@ -14,7 +14,7 @@
 #define MODE_SENSE_PIN   10
 #define BLUE_SENSE_PIN    9
 
-#define  SOFT_BTN_THRESHOLD   180
+#define  SOFT_BTN_THRESHOLD   290
 #define  COLOR_STEP             3
 
 #define NUM_LEDS                2
@@ -119,30 +119,20 @@ void setup() {
 }
 
 void loop() {
-  long start = millis();
   long mode_sense_value =  mode_sense.capacitiveSensorRaw(30);
-  long t_mode = millis();
   long red_sense_value =  red_sense.capacitiveSensorRaw(30);
-  long t_r = millis();
   long green_sense_value = green_sense.capacitiveSensorRaw(30);
-  long t_g = millis();
   long blue_sense_value  =  blue_sense.capacitiveSensorRaw(30);
-  long t_b = millis();
-  Serial.print(t_mode - start);Serial.print("  ");
-  Serial.print(t_g - t_r);Serial.print("  ");
-  Serial.print(t_r - t_mode);Serial.print("  ");
-  Serial.print(t_b - t_g);Serial.print("  ");        // check on performance in milliseconds
   
   static int red_value = 0;
   static int green_value = 0;
   static int blue_value = 0;
-  static boolean increase =  true;
-  static boolean t_press =  false;
   static int led_idx = 0;
+  static boolean t_press = false;
 
   Serial.print(" value (mode, g, r, b) ");
   Serial.print(mode_sense_value);
-  Serial.print("  ");
+   Serial.print("  ");
   Serial.print(green_sense_value);
   Serial.print("  ");
   Serial.print(red_sense_value);
