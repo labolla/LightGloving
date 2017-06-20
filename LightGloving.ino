@@ -4,7 +4,7 @@
 #endif
 #include <CapacitiveSensor.h>
 
-// NeoPixel drving pin
+// NeoPixel driving pin
 #define NEO_PIN 6
 
 // capacitor soft button defines: 4 touch sensors
@@ -37,51 +37,10 @@ CapacitiveSensor blue_sense  = CapacitiveSensor(SOURCE_PIN,BLUE_SENSE_PIN);
 CapacitiveSensor mode_sense  = CapacitiveSensor(SOURCE_PIN,MODE_SENSE_PIN);
 
 
-/*cut&paste some example-test routine from strandtest example for Neoixel libs*/
-// Fill the dots one after the other with a color
-void colorWipe(uint32_t c, uint8_t wait) {
-  for(uint16_t i=0; i<strip.numPixels(); i++) {
-    strip.setPixelColor(i, c);
-    strip.show();
-    delay(wait);
-  }
-}
-
-// Input a value 0 to 255 to get a color value.
-// The colours are a transition r - g - b - back to r.
-uint32_t Wheel(byte WheelPos) {
-  WheelPos = 255 - WheelPos;
-  if(WheelPos < 85) {
-    return strip.Color(255 - WheelPos * 3, 0, WheelPos * 3);
-  }
-  if(WheelPos < 170) {
-    WheelPos -= 85;
-    return strip.Color(0, WheelPos * 3, 255 - WheelPos * 3);
-  }
-  WheelPos -= 170;
-  return strip.Color(WheelPos * 3, 255 - WheelPos * 3, 0);
-}
-
-void rainbow(uint8_t wait) {
-  uint16_t i, j;
-
-  for(j=0; j<256; j++) {
-    for(i=0; i<strip.numPixels(); i++) {
-      strip.setPixelColor(i, Wheel((i+j) & 255));
-    }
-    strip.show();
-    delay(wait);
-  }
-}
-
-void setup() {
-  Serial.begin(9600);
-  /* 2 LEDs strip init */
-  strip.begin();
-  strip.show(); // Initialize all pixels to 'off'
-  delay(1000);
-
-
+/* boot test  for led
+ *  note: strip has already been ini via strip.begin call
+ */
+void testLed() {
   Serial.print("checking first pixel...\n");
   // turn on led to check HW
   strip.setPixelColor(0, strip.Color(255, 0, 0));
@@ -111,12 +70,58 @@ void setup() {
   strip.setPixelColor(1, strip.Color(0, 0, 0));
   strip.show();
   delay(1000);
-
-  //Serial.print("10 seconds of Rainbowº\n");
- //rainbow(10000);
-
-  
 }
+
+
+void setup() {
+  
+  //init serial
+  Serial.begin(9600);
+
+  // init ISR 
+  OCR0A = 0x50;
+  TIMSK0 |= _BV(OCIE0A);
+ 
+  /* 2 LEDs strip init */
+  strip.begin();
+  strip.show(); // Initialize all pixels to 'off'
+
+  testLed();
+}
+
+// START code for using ISR - put here what i was in loop, getting mills once
+SIGNAL(TIMER0_COMPA_vect)
+{
+  
+  static unsigned long lastTime = 0;
+  static long count = 0;
+  unsigned long currTime = millis();
+
+  // debug code to understand ISR granularity
+  if (lastTime == 0) {
+    lastTime = currTime;
+    return;
+  }
+
+  count = count + 1;
+  unsigned long deltaTime = currTime - lastTime;
+  if (deltaTime > 1000) {
+    lastTime = currTime;
+
+    Serial.print("Tmr0 ISR: count, delta =");
+    Serial.print(count);
+    Serial.print(", ");
+    Serial.print(deltaTime);
+    Serial.print("\t");
+
+    Serial.print(". ISR called every ");
+    Serial.print(deltaTime/count);
+    Serial.print(" ms.\n");
+
+    count = 0;
+  }  
+}
+// END
 
 void loop() {
   long mode_sense_value =  mode_sense.capacitiveSensorRaw(30);
@@ -130,7 +135,7 @@ void loop() {
   static int led_idx = 0;
   static boolean t_press = false;
 
-  Serial.print(" value (mode, g, r, b) ");
+ /* Serial.print(" value (mode, g, r, b) ");
   Serial.print(mode_sense_value);
    Serial.print("  ");
   Serial.print(green_sense_value);
@@ -139,31 +144,43 @@ void loop() {
   Serial.print("  ");
   Serial.print(blue_sense_value);
   Serial.print("\n");
-
+*/
   if (red_sense_value > SOFT_BTN_THRESHOLD)
   {
+    if (red_value != 255)
+      Serial.print("RED: pressed\n");
     red_value = 255;
   }
   else
   {
+    if (red_value != 0)
+      Serial.print("RED: released\n");
     red_value = 0;
   }
 
   if (green_sense_value > SOFT_BTN_THRESHOLD)
   {
+    if (green_value != 255)
+      Serial.print("GREEN: pressed\n");
     green_value = 255;  
   }
   else
   {
+    if (green_value != 0)
+      Serial.print("GREEN: released\n");
     green_value = 0;
   }
   
   if (blue_sense_value > SOFT_BTN_THRESHOLD)
   {
+    if (blue_value != 255)
+      Serial.print("BLUE: pressed\n");
     blue_value = 255;
   }
   else
   {
+    if (blue_value != 0)
+      Serial.print("BLUE: released\n");
     blue_value = 0;
   }
 
@@ -182,7 +199,8 @@ void loop() {
       if (led_idx == 1)
         led_idx = 0;
       else
-        led_idx = 1;      
+        led_idx = 1;
+      Serial.print("Switching led\n");
      }
   }
   strip.setPixelColor(led_idx, strip.Color(red_value, green_value, blue_value));
