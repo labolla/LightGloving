@@ -3,6 +3,9 @@
   #include <avr/power.h>
 #endif
 #include <CapacitiveSensor.h>
+#include <math.h>
+
+
 
 // NeoPixel driving pin
 #define NEO_PIN 6
@@ -23,11 +26,18 @@
 #define RX_SENSE_PIN    9
 
 /* fine tune the Threshold to detect when pressed or not.
- * a different value may be set to support multiplle simoultaneoulsy touch, aka combination 
+ * a different value may be set to support multiplle simoultaneoulsy touch, aka combination.
+ * Enqble DEBUG_CALIB to log sensed value and to fine tune threshold and samples
  */
+#define DEBUG_CALIB   0
 #define  SOFT_BTN_THRESHOLD   290
 #define  SOFT_SENSING_SAMPLES  30
 
+#define DEBUG_PATTERN 1
+
+
+// update led pattern every UPDATE_RATE msec, called in ISR 
+#define UPDATE_RATE  40
 
 // button handling macro
 // state macro
@@ -82,7 +92,7 @@ CapacitiveSensor sense[NUM_BUTTON] = {
   CapacitiveSensor(SOURCE_PIN,RX_SENSE_PIN),
 };
 
-/* Class tha defines a button handling */
+/* Class that defines a button handling */
 class  Button {
   // variable to save press/release init event
   unsigned long press_start;
@@ -96,7 +106,7 @@ class  Button {
   void (*short_release_cback) ();
   void (*long_release_cback) ();
 
-  // Constructor reauires to pass all needed callback
+  // Constructor requires to pass all needed callback
   public:
   Button(void (*short_press_cb) (), void (*long_press_cb) (), void (*short_release_cb) (), void (*long_release_cb) ()) {
     short_press_cback = short_press_cb;
@@ -193,6 +203,114 @@ class  Button {
    
 };
 
+class PixelPattern {
+  int period;
+  int pixel_id;
+  int r_offset;
+  int (*r_pattern) (int);
+  int r_start_time;
+  int g_offset;
+  int (*g_pattern) (int);
+  int g_start_time;
+  int b_offset;
+  int (*b_pattern) (int);
+  int b_start_time;
+
+  public:
+  //constructors
+  PixelPattern(int p_id, int interval, int r_off, int (*r_cb) (int), int g_off, int (*g_cb) (int),int b_off, int (*b_cb) (int)) {
+    pixel_id = p_id;
+    r_offset = r_off;
+    g_offset = g_off;
+    b_offset = b_off;
+    r_pattern = r_cb;
+    g_pattern = g_cb;
+    b_pattern = b_cb;
+    period = interval;
+
+    r_start_time = 0;
+    g_start_time = 0;
+    b_start_time = 0;    
+  }
+
+  void set_r(int r_off, int (*r_cb) (int), unsigned long start) {
+    r_offset = r_off;
+    r_pattern = r_cb;
+    r_start_time = start;
+  }
+
+  void set_g(int g_off, int (*g_cb) (int), unsigned long start) {
+    g_offset = g_off;
+    g_pattern = g_cb;
+    g_start_time = start;
+  }
+
+  void set_b(int b_off, int (*b_cb) (int), unsigned long start) {
+    b_offset = b_off;
+    b_pattern = b_cb;
+    b_start_time = start;
+  }
+
+  void set_r_start(int value) {
+    r_start_time = value;
+  }
+
+  void set_g_start(int value) {
+    g_start_time = value;
+  }
+
+  void set_b_start(int value) {
+    b_start_time = value;
+  }
+
+  void update_pixel(int curr_time) {
+    int x = (curr_time - r_start_time) % period;
+    int r = r_offset + r_pattern(x);
+    if (r > 255)
+      r = 255;
+
+    x = (curr_time - g_start_time) % period;
+    int g = g_offset + g_pattern(x);
+    if (g > 255)
+      g = 255;
+
+    x = (curr_time - b_start_time) % period;
+    int b = b_offset + b_pattern(x);
+    if (b > 255)
+      b = 255;
+
+    strip.setPixelColor(pixel_id, strip.Color(r, g, b));
+    //TODO: understand why disabling the print let have LED always set to white??
+#if DEBUG_PATTERN 
+    Serial.print(pixel_id);
+    Serial.print("   ");
+    Serial.print(r);
+    Serial.print("   ");
+    Serial.print(g);
+    Serial.print("   ");
+    Serial.print(b);
+    Serial.print("\n");
+#endif   
+  }
+  
+};
+
+// led pattern constant
+int pixelConst(int x) { 
+  //Serial.println("pixelConst");
+  return 0;
+}
+
+int sin_1Hz_150(int x) {
+  //Serial.println("sin_1Hz_150");
+  return 65*(1+sin(M_PI *x/3500));
+}
+
+// init pixel to constant OFF 
+PixelPattern pixels[NUM_LEDS] = {
+  PixelPattern(0, 7000, 0, pixelConst, 0, pixelConst, 0, pixelConst),
+  PixelPattern(1, 7000, 0, pixelConst, 0, pixelConst, 0, pixelConst)
+};
 
 // BUTTON callback function
 void mode_short_press_cback() {
@@ -205,10 +323,16 @@ void mode_long_press_cback() {
 
 void mode_short_release_cback() {
   Serial.print("mode_short_release_cback\n");
+  pixels[0].set_r(0, pixelConst, 0);
+  pixels[0].set_g(0, pixelConst, 0);
+  pixels[0].set_b(0, pixelConst, 0);
 }
 
 void mode_long_release_cback() {
   Serial.print("mode_long_release_cback\n");
+  pixels[1].set_r(0, pixelConst, 0);
+  pixels[1].set_g(0, pixelConst, 0);
+  pixels[1].set_b(0, pixelConst, 0);
 }
 
 void rx_short_press_cback() {
@@ -221,10 +345,12 @@ void rx_long_press_cback() {
 
 void rx_short_release_cback() {
   Serial.print("rx_short_release_cback\n");
+  pixels[0].set_r(10, sin_1Hz_150, millis());
 }
 
 void rx_long_release_cback() {
   Serial.print("rx_long_release_cback\n");
+  pixels[1].set_r(10, sin_1Hz_150, millis());
 }
 
 void cx_short_press_cback() {
@@ -237,10 +363,12 @@ void cx_long_press_cback() {
 
 void cx_short_release_cback() {
   Serial.print("cx_short_release_cback\n");
+  pixels[0].set_g(10, sin_1Hz_150, millis());
 }
 
 void cx_long_release_cback() {
   Serial.print("cx_long_release_cback\n");
+  pixels[1].set_g(10, sin_1Hz_150, millis());
 }
 
 void lx_short_press_cback() {
@@ -253,10 +381,12 @@ void lx_long_press_cback() {
 
 void lx_short_release_cback() {
   Serial.print("lx_short_release_cback\n");
+  pixels[0].set_b(10, sin_1Hz_150, millis());
 }
 
 void lx_long_release_cback() {
   Serial.print("lx_long_release_cback\n");
+  pixels[1].set_b(10, sin_1Hz_150, millis());
 }
 
 Button btn[NUM_BUTTON] = { 
@@ -271,8 +401,23 @@ Button btn[NUM_BUTTON] = {
 // START code for using ISR - put here what i was in loop, getting mills once
 SIGNAL(TIMER0_COMPA_vect)
 {
-  //unsigned long currTime = millis(); 
-  //check_inputs(currTime);  
+  //static unsigned long firstTime = 0;
+  static unsigned long lastTime;
+  unsigned long currTime = millis();
+
+  //if (firstTime == 0) {
+  if (lastTime == 0) {
+  //  firstTime = currTime;
+    lastTime = currTime;
+  }
+
+  if (currTime - lastTime > UPDATE_RATE) {
+      for (int i; i < NUM_LEDS; i++) {
+        pixels[i].update_pixel(currTime);
+    }
+    lastTime = currTime;
+    strip.show();
+  }
 }
 // END
 
@@ -284,31 +429,31 @@ void testLed() {
   // turn on led to check HW
   strip.setPixelColor(0, strip.Color(255, 0, 0));
   strip.show();
-  delay(500);
+  delay(200);
   strip.setPixelColor(0, strip.Color(0, 255, 0));
   strip.show();
-  delay(500);
+  delay(200);
   strip.setPixelColor(0, strip.Color(0, 0, 255));
   strip.show();
-  delay(500);
+  delay(200);
   strip.setPixelColor(0, strip.Color(0, 0, 0));
   strip.show();
-  delay(1000);
+  delay(500);
 
 
   Serial.print("checking second pixel...\n");
   strip.setPixelColor(1, strip.Color(255, 0, 0));
   strip.show();
-  delay(500);
+  delay(200);
   strip.setPixelColor(1, strip.Color(0, 255, 0));
   strip.show();
-  delay(500);
+  delay(200);
   strip.setPixelColor(1, strip.Color(0, 0, 255));
   strip.show();
-  delay(500);
+  delay(200);
   strip.setPixelColor(1, strip.Color(0, 0, 0));
   strip.show();
-  delay(1000);
+  delay(500);
 }
 
 void setup() {
@@ -316,15 +461,15 @@ void setup() {
   //init serial
   Serial.begin(9600);
 
+  // LED strip init qnd boot-up led test (before init ISR to avoid it is called)
+  strip.begin();
+  strip.show(); // Initialize all pixels to 'off'
+  testLed();
+  
   // init ISR 
   OCR0A = 0x50;
   TIMSK0 |= _BV(OCIE0A);
  
-  /* 2 LEDs strip init */
-  strip.begin();
-  strip.show(); // Initialize all pixels to 'off'
-
-  testLed();
 }
 
 void loop() {
@@ -332,6 +477,13 @@ void loop() {
 
   for (int i = 0 ; i < NUM_BUTTON; i++) {
     int sense_value =  sense[i].capacitiveSensorRaw(SOFT_SENSING_SAMPLES);
+#if DEBUG_CALIB
+    Serial.print(sense_value);
+    if (i < NUM_BUTTON-1)
+      Serial.print("\t");
+    else
+      Serial.print("\n");
+#endif
     btn[i].check(sense_value, currTime);
   }
   
